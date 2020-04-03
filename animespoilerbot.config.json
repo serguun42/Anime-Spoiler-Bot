@@ -1,0 +1,27 @@
+{
+	"TELEGRAM_BOT_TOKEN": "",
+	"ADMIN_TELEGRAM_DATA": {
+		"id": 1234567890000000000,
+		"username": "%ADMIN_USERNAME%"
+	},
+	"CHATS_LIST": [
+		{
+			"id": -123456789000000000000,
+			"name": "TEST CHAT",
+			"enabled": true
+		},
+		{
+			"id": -123456789000000000001,
+			"name": "MAIN CHAT",
+			"enabled": false
+		},
+		{
+			"id": -123456789000000000002,
+			"name": "OTHER CHAT",
+			"enabled": false
+		}
+	],
+	"PROXY_URL": "",
+	"EMPTY_QUERY_IMG": "URL/empty.png",
+	"DONE_QUERY_IMG": "URL/done.png"
+}
