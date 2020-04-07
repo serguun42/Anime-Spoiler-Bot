@@ -21,6 +21,11 @@
 			"enabled": false
 		}
 	],
+	"COMMANDS_WHITELIST": [
+		"admin1",
+		"admin2",
+		"admin3"
+	],
 	"PROXY_URL": "",
 	"EMPTY_QUERY_IMG": "URL/empty.png",
 	"DONE_QUERY_IMG": "URL/done.png"

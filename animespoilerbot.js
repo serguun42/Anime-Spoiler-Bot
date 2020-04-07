@@ -1,14 +1,36 @@
 const
 	fs = require("fs"),
+	DEV = require("os").platform() === "win32" || process.argv[2] === "DEV",
+	L = function(arg) {
+		if (DEV) {
+			console.log(...arguments);
+			if (typeof arg == "object") fs.writeFileSync("./out/errors.json", JSON.stringify(arg, false, "\t"));
+		};
+	},
 	Telegraf = require("telegraf"),
 	Sessions = require("telegraf/session"),
 	Telegram = require("telegraf/telegram"),
-	Markup = require("telegraf/markup"),
-	DEV = require("os").platform() === "win32" || process.argv[2] === "DEV",
+	Markup = require("telegraf/markup");
+
+
+/**
+ * @typedef {Object} ConfigFile
+ * @property {String} TELEGRAM_BOT_TOKEN
+ * @property {{id: number, username: string}} ADMIN_TELEGRAM_DATA
+ * @property {Array.<{id: number, name?: string, enabled: boolean}>} CHATS_LIST
+ * @property {String[]} COMMANDS_WHITELIST
+ * @property {String} PROXY_URL
+ * @property {String} EMPTY_QUERY_IMG
+ * @property {String} DONE_QUERY_IMG
+ */
+/** @type {ConfigFile} */
+const
 	CONFIG = JSON.parse(fs.readFileSync("./animespoilerbot.config.json")),
 	TELEGRAM_BOT_TOKEN = CONFIG.TELEGRAM_BOT_TOKEN,
 	ADMIN_TELEGRAM_DATA = CONFIG.ADMIN_TELEGRAM_DATA,
 	CHATS_LIST = CONFIG.CHATS_LIST,
+	COMMANDS_WHITELIST = CONFIG.COMMANDS_WHITELIST,
+	COMMANDS_USAGE = new Object(),
 	COMMANDS = {
 		"help": `Напиши мне через инлайн <code>@animespoilerbot &lt;ТЕКСТ СПОЙЛЕРА&gt;</code>. И я скрою всё сам и сделаю кнопочку.
 
@@ -34,6 +56,35 @@ if (DEV) {
 const
 	telegram = new Telegram(TELEGRAM_BOT_TOKEN, telegramConnectionData),
 	TOB = new Telegraf(TELEGRAM_BOT_TOKEN, { telegram: telegramConnectionData });
+
+
+
+const TGE = iStr => {
+	if (!iStr) return "";
+	
+	if (typeof iStr === "string")
+		return iStr
+			.replace(/\&/g, "&amp;")
+			.replace(/\</g, "&lt;")
+			.replace(/\>/g, "&gt;");
+	else
+		return TGE(iStr.toString());
+};
+
+/**
+ * @param {String} message
+ */
+const TelegramSendToAdmin = (message) => {
+	if (!message) return;
+
+	telegram.sendMessage(ADMIN_TELEGRAM_DATA.id, message, {
+		parse_mode: "HTML",
+		disable_notification: false
+	}).then(() => {}, (e) => console.error(e));
+};
+
+TelegramSendToAdmin(`Anime Spoiler Bot have been spawned at ${new Date().toISOString()} <i>(ISO 8601, UTC)</i>`);
+
 
 
 /**
@@ -130,13 +181,23 @@ const DefaultHandler = (ctx) => {
 			return ReplySpoiler(ctx);
 
 
-		let commandMatch = text.match(/^\/([\w]+)\@animespoilerbot$/i);
+		let commandMatch = text.match(/^\/([\w]+)(\@animespoilerbot)$/i);
 
-		if (commandMatch && commandMatch[1])
-			return ctx.reply(COMMANDS[commandMatch[1]], {
-				disable_web_page_preview: true,
-				parse_mode: "HTML"
-			}).then(L).catch(L);
+		if (!!commandMatch && !!commandMatch[1]) {
+			telegram.deleteMessage(chat.id, message.message_id).then(L).catch(L);
+			if (!CheckForCommandAvailability(from)) {
+				return false;
+			};
+
+
+			L({commandMatch});
+
+			if (typeof COMMANDS[commandMatch[1]] == "string")
+				return ctx.reply(COMMANDS[commandMatch[1]], {
+					disable_web_page_preview: true,
+					parse_mode: "HTML"
+				}).then(L).catch(L);
+		};
 	});
 };
 
@@ -181,41 +242,44 @@ TOB.launch();
 
 
 
-const L = function(arg) {
-	if (DEV) {
-		console.log(...arguments);
-		if (typeof arg == "object") fs.writeFileSync("./out/errors.json", JSON.stringify(arg, false, "\t"));
-	};
-};
 
-const TGE = iStr => {
-	if (!iStr) return "";
-	
-	if (typeof iStr === "string")
-		return iStr
-			.replace(/\&/g, "&amp;")
-			.replace(/\</g, "&lt;")
-			.replace(/\>/g, "&gt;");
-	else
-		return TGE(iStr.toString());
-};
 
 
 /**
- * @param {String} message
+ * @param {TelegramMessageObject} message
  */
-const TelegramSendToAdmin = (message) => {
-	if (!message) return;
+const GetUsername = (message) => {
+	const {from} = message;
+	if (!from) return "<А Телеграм поломався)))>"
 
-	telegram.sendMessage(ADMIN_TELEGRAM_DATA.id, message, {
-		parse_mode: "HTML",
-		disable_notification: false
-	}).then(() => {}, (e) => console.error(e));
+	if (from.username)
+		return `<a href="https://t.me/${from.username}">${TGE(from.first_name)}${from.last_name ? " " + TGE(from.last_name) : ""}</a>`;
+	else if (from.last_name)
+		return TGE(from.first_name + " " + from.last_name);
+	else
+		return TGE(from.first_name);
 };
 
-TelegramSendToAdmin(`Anime Spoiler Bot have been spawned at ${new Date().toISOString()} <i>(ISO 8601, UTC)</i>`);
+/**
+ * @param {TelegramFromObject} from
+ * @returns {Boolean}
+ */
+const CheckForCommandAvailability = (from) => {
+	let pass = false;
+	if (from.username && COMMANDS_WHITELIST.includes(from.username))
+		pass = true;
+	else {
+		let lastTimeCalled = COMMANDS_USAGE[from.id];
+			COMMANDS_USAGE[from.id] = Date.now();
 
+		if (!lastTimeCalled || typeof lastTimeCalled == "undefined")
+			pass = true;
+		else if ((Date.now() - lastTimeCalled) > 15 * 60 * 1e3)
+			pass = true;
+	};
 
+	return pass;
+};
 
 let spoilerIdStamp = new Number();
 
@@ -224,8 +288,6 @@ let textSpoilersArray = new Array();
 
 /** @type {Array.<{id: number, file_id: string, caption?: string}>} */
 let imageSpoilersArray = new Array();
-
-
 
 /**
  * @param {String} iSpoiler
@@ -254,22 +316,6 @@ const GlobalGetIDForImage = (iFileIDSpoiler, iCaption) => {
 
 	return id;
 };
-
-/**
- * @param {TelegramMessageObject} message
- */
-const GetUsername = (message) => {
-	const {from} = message;
-	if (!from) return "<А Телеграм поломався)))>"
-
-	if (from.username)
-		return `<a href="https://t.me/${from.username}">${TGE(from.first_name)}${from.last_name ? " " + TGE(from.last_name) : ""}</a>`;
-	else if (from.last_name)
-		return TGE(from.first_name + " " + from.last_name);
-	else
-		return TGE(from.first_name);
-};
-
 
 
 
@@ -314,7 +360,7 @@ TOB.action(/^SHOW_TEXT_SPOILER_(\d+_\d+)/, (ctx) => {
 		if (indexOfSpoiler > -1) {
 			let spoilerToDisplay = textSpoilersArray[indexOfSpoiler]["text"].toString();
 
-			return ctx.answerCbQuery(spoilerToDisplay, true);
+			return ctx.answerCbQuery(spoilerToDisplay, true).then(L).catch(L);
 		} else
 			return ctx.answerCbQuery("Спойлер настолько ужасный, что я его потерял 😬. Вот растяпа!", true);
 	} else
